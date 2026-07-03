@@ -43,13 +43,14 @@ BAD_WORDS = {
 def is_english_only(text):
     if not text.strip():
         return True
+    # فحص الحروف العربية بشكل صارم ومباشر
     arabic_pattern = re.compile(r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]')
     if arabic_pattern.search(text):
         return False
     return True
 
 def contains_link(text):
-    pattern = r'(https?://[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,4})|(@[a-zA-Z0-9_]+)'
+    pattern = r'(https?://[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,4})|(t\.me/[^\s]+)|(@[a-zA-Z0-9_]+)'
     return bool(re.search(pattern, text))
 
 def contains_bad_word(text):
@@ -59,21 +60,22 @@ def contains_bad_word(text):
             return True
     return False
 
-# --- نظام التعامل مع المخالفات (3 تحذيرات ثم كتم 5 دقائق) ---
+# --- نظام التعامل مع المخالفات الشامل الحذف والتحذير ---
 async def handle_violation(event, violation_type, reason_text):
     chat_id = event.chat_id
     user_id = event.sender_id
     
+    # الحذف الفوري والمباشر قبل عمل أي شيء آخر لضمان السرعة
+    try:
+        await event.delete()
+    except Exception as e:
+        print(f"Error deleting message: {e}")
+
     try:
         sender = await event.get_sender()
         user_name = f"@{sender.username}" if (sender and sender.username) else (sender.first_name if sender else "User")
     except Exception:
         user_name = "User"
-    
-    try:
-        await event.delete()
-    except Exception:
-        pass
 
     warnings[chat_id][user_id] += 1
     current_warns = warnings[chat_id][user_id]
@@ -102,7 +104,7 @@ async def keep_alive():
                 pass
             await asyncio.sleep(45)
 
-# --- فحص ومراقبة الرسائل والمحادثات في المجموعات ---
+# --- فحص ومراقبة الرسائل والمحادثات في المجموعات (تعديل جذري وسلس) ---
 @client.on(events.NewMessage(incoming=True))
 async def monitor_group_messages(event):
     if event.is_private:
@@ -110,24 +112,32 @@ async def monitor_group_messages(event):
 
     chat_id = event.chat_id
     groups_db.add(chat_id)
-    text = event.text or ""
+    
+    # استخراج النص المباشر من الحدث
+    text = event.raw_text or event.text or ""
 
-    if settings['clean_service_msg'] and event.is_group:
-        if event.action_message:
-            try:
-                await event.delete()
-            except Exception:
-                pass
+    # تجنب فحص الرسائل التي تبدأ بأوامر إدارية حتى لا يحدث تضارب
+    if text.startswith('/'):
+        return
+
+    # 1. منع الروابط والرسائل المحولة
+    if settings['link_filter']:
+        if contains_link(text) or event.forward:
+            await handle_violation(event, "link", "sending links/forwarded messages")
             return
 
+    # 2. منع اللغات عدا الإنجليزية (مثل الحروف العربية)
+    if settings['lang_filter']:
+        if not is_english_only(text):
+            await handle_violation(event, "language", "using non-English language")
+            return
+
+    # 3. الكلمات البذيئة
     if settings['bad_words_filter'] and contains_bad_word(text):
         await handle_violation(event, "bad_word", "using inappropriate words")
         return
 
-    if settings['link_filter'] and contains_link(text):
-        await handle_violation(event, "link", "sending links")
-        return
-
+    # 4. منع السخام (Spam)
     if settings['spam_filter']:
         user_id = event.sender_id
         now = datetime.now()
@@ -137,11 +147,17 @@ async def monitor_group_messages(event):
             await handle_violation(event, "spam", "flooding/spamming")
             return
 
-    if settings['lang_filter'] and not is_english_only(text):
-        await handle_violation(event, "language", "using non-English language")
-        return
+# --- تنظيف رسائل الخدمة بشكل منفصل تماماً لمنع أي تعليق في الكود ---
+@client.on(events.ChatAction)
+async def action_cleaner(event):
+    if settings['clean_service_msg']:
+        if event.user_joined or event.user_left or event.user_kicked:
+            try:
+                await event.delete()
+            except Exception:
+                pass
 
-# --- التعديل الجديد: أوامر السيطرة الإدارية بالرد مع ميزة التوجيه المباشر والفعلي للرسالة الأصلية ---
+# --- أوامر السيطرة الإدارية بالرد مع ميزة التوجيه المباشر والفعلي ---
 @client.on(events.NewMessage(pattern=r'^/(mute|unmute|ban|unban)'))
 async def admin_commands(event):
     if event.is_private:
@@ -176,7 +192,6 @@ async def admin_commands(event):
         if command == "mute":
             await client.edit_permissions(event.chat_id, target_user, send_messages=False)
             await event.respond(f"🚫 {user_name} has been muted by Admin.")
-            # توجيه الرسالة التي تم عمل كتم بسببها مباشرة إلى المطور أو جهة محددة للحفظ
             await client.forward_messages(OWNER_ID, reply_msg)
         elif command == "unmute":
             await client.edit_permissions(event.chat_id, target_user, send_messages=True)
@@ -184,7 +199,6 @@ async def admin_commands(event):
         elif command == "ban":
             await client.kick_participant(event.chat_id, target_user)
             await event.respond(f"🚷 {user_name} has been banned and kicked by Admin.")
-            # توجيه رسالة الشخص المحظور توجيهاً مباشراً للمطور
             await client.forward_messages(OWNER_ID, reply_msg)
         elif command == "unban":
             await client.edit_permissions(event.chat_id, target_user, send_messages=True)
