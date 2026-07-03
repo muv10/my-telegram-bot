@@ -21,7 +21,7 @@ last_panel_msg = {}
 
 # قاموس اللغات
 LANGUAGES = {
-    "AR": "العربية 🇦🇷", "EN": "English 🇺🇸", "FR": "Français 🇫🇷", "ES": "Español 🇪🇸",
+    "AR": "العربية 🇮🇶", "EN": "English 🇺🇸", "FR": "Français 🇫🇷", "ES": "Español 🇪🇸",
     "PT": "Português 🇵🇹", "DE": "Deutsch 🇩🇪", "IT": "Italiano 🇮🇹", "RU": "Русский 🇷🇺",
     "ZH": "中文 🇨🇳", "JA": "日本語 🇯🇵", "KO": "한국어 🇰🇷", "HI": "हिन्दी 🇮🇳",
     "UR": "اردو 🇵🇰", "TR": "Türkçe 🇹🇷", "FA": "فارسی 🇮🇷", "ID": "Indonesian 🇮🇩",
