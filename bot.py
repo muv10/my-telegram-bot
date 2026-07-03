@@ -19,6 +19,7 @@ group_settings = {}
 spam_tracker = defaultdict(list)
 last_panel_msg = {}
 
+# قاموس اللغات
 LANGUAGES = {
     "AR": "العربية 🇦🇷", "EN": "English 🇺🇸", "FR": "Français 🇫🇷", "ES": "Español 🇪🇸",
     "PT": "Português 🇵🇹", "DE": "Deutsch 🇩🇪", "IT": "Italiano 🇮🇹", "RU": "Русский 🇷🇺",
@@ -32,7 +33,7 @@ LANGUAGES = {
 
 def get_settings(chat_id):
     if chat_id not in group_settings:
-        settings = {lang: (lang in ["AR", "EN"]) for lang in LANGUAGES}
+        settings = {lang: True for lang in LANGUAGES} # تفعيل الكل افتراضياً
         settings.update({'link_filter': True, 'spam_filter': True, 'bad_words_filter': True})
         group_settings[chat_id] = settings
     return group_settings[chat_id]
@@ -40,14 +41,10 @@ def get_settings(chat_id):
 def build_main_panel(chat_id, user_id):
     settings = get_settings(chat_id)
     builder = InlineKeyboardBuilder()
-    
-    # الفلاتر الأساسية كما في الصورة
     for key, label in [('link_filter', 'Links'), ('spam_filter', 'Spam'), ('bad_words_filter', 'Bad Words')]:
         status = "✅" if settings[key] else "❌"
         builder.row(InlineKeyboardButton(text=f"{label}: {status}", callback_data=f"toggle_{key}_{chat_id}"))
-    
     builder.row(InlineKeyboardButton(text="🌍 Language Control", callback_data=f"lang_menu_{chat_id}"))
-    
     if user_id == OWNER_ID:
         builder.row(InlineKeyboardButton(text="📊 Show Stats", callback_data="stats"))
     return builder.as_markup()
@@ -83,16 +80,35 @@ async def handle_toggle(callback: types.CallbackQuery):
     parts = callback.data.split("_")
     chat_id = int(parts[-1])
     settings = get_settings(chat_id)
-    
     if parts[1] == "lang":
         lang_code = parts[2]
         settings[lang_code] = not settings[lang_code]
         await callback.message.edit_reply_markup(reply_markup=build_lang_panel(chat_id))
     else:
-        key = f"{parts[1]}_filter"
+        key = f"{parts[1]}_{parts[2]}" if len(parts) > 3 else f"{parts[1]}_filter"
         settings[key] = not settings[key]
         await callback.message.edit_reply_markup(reply_markup=build_main_panel(chat_id, callback.from_user.id))
     await callback.answer("Settings updated")
 
-# دالة monitor ستحتاج لتحديث منطق فحص اللغات بناءً على قاموس اللغات الجديد (سأقوم ببرمجتها لاحقاً إذا أردت)
-# حالياً الكود يركز على ضبط شكل القائمة كما طلبت في **1000319405.jpg**
+@dp.message()
+async def monitor(message: types.Message):
+    if message.chat.type == 'private' or message.from_user.id == OWNER_ID: return
+    chat_id = message.chat.id
+    settings = get_settings(chat_id)
+    # السبام والروابط تعمل كالسابق
+    if settings['spam_filter']:
+        user_id = message.from_user.id
+        now = asyncio.get_event_loop().time()
+        spam_tracker[user_id] = [t for t in spam_tracker[user_id] if now - t < 3]
+        spam_tracker[user_id].append(now)
+        if len(spam_tracker[user_id]) > 3:
+            await message.delete()
+            return
+    if settings['link_filter'] and re.search(r'https?://[^\s]+', message.text or message.caption or ""):
+        await message.delete()
+
+async def main():
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
