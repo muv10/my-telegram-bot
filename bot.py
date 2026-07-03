@@ -10,7 +10,7 @@ from collections import defaultdict
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 OWNER_ID = 5270790672
-BOT_USERNAME = "N7_Ubot" # <--- ضع يوزر بوتك هنا
+BOT_USERNAME = "N7_Ubot" 
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -21,6 +21,7 @@ user_warnings = defaultdict(int)
 spam_tracker = defaultdict(list)
 last_panel_msg = {}
 
+# قاموس اللغات
 LANGUAGES = {"AR": "العربية 🇮🇶", "EN": "English 🇺🇸", "FR": "Français 🇫🇷"} 
 
 def get_settings(chat_id):
@@ -42,14 +43,17 @@ def build_main_panel(chat_id, user_id):
 
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message):
-    # الحل للمشكلة: التحقق من نوع المحادثة أولاً
+    # الحل الجديد: التحقق من مكان الأمر
     if message.chat.type in ['group', 'supergroup']:
         msg = await message.answer("🛠 Bot Control Panel:", reply_markup=build_main_panel(message.chat.id, message.from_user.id))
         last_panel_msg[message.chat.id] = msg.message_id
     else:
-        b = InlineKeyboardBuilder()
-        b.row(InlineKeyboardButton(text="➕ Add to Group", url=f"https://t.me/{BOT_USERNAME}?startgroup=true"))
-        await message.answer("👋 Welcome! Use this button to add me to your group:", reply_markup=b.as_markup())
+        # رسالة إرشادية في الخاص بدون أزرار لتجنب الخطأ
+        await message.answer(
+            "👋 Welcome to LangFilter!\n\n"
+            "To activate me, please add me to your group manually, "
+            "then send the /start command inside the group."
+        )
 
 @dp.callback_query(F.data.startswith("toggle_"))
 async def handle_toggle(callback: types.CallbackQuery):
@@ -68,7 +72,6 @@ async def monitor(message: types.Message):
     s = get_settings(chat_id)
     user_id = message.from_user.id
     
-    # منطق الفلترة (سبام وروابط)
     violation = False
     if s['spam_filter']:
         now = asyncio.get_event_loop().time()
@@ -79,7 +82,6 @@ async def monitor(message: types.Message):
     if s['link_filter'] and re.search(r'https?://[^\s]+', message.text or message.caption or ""):
         violation = True
     
-    # منطق التحذيرات والعقوبات
     if violation:
         user_warnings[user_id] += 1
         if user_warnings[user_id] >= s['warn_limit']:
@@ -90,7 +92,7 @@ async def monitor(message: types.Message):
             except: pass
         else:
             await message.delete()
-            await message.answer(f"⚠️ Warning {user_warnings[user_id]}/{s['warn_limit']} for user.")
+            await message.answer(f"⚠️ Warning {user_warnings[user_id]}/{s['warn_limit']}")
 
 async def main():
     await dp.start_polling(bot)
