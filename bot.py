@@ -13,25 +13,28 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 logging.basicConfig(level=logging.INFO)
 
-# Language Dictionary
+# قاموس اللغات ورموز Unicode الخاصة بها
 LANGUAGES = {
-    "AR": "Arabic 🇮🇶", "EN": "English 🇺🇸", "FR": "Français 🇫🇷", "ES": "Español 🇪🇸",
-    "PT": "Português 🇵🇹", "DE": "Deutsch 🇩🇪", "IT": "Italiano 🇮🇹", "RU": "Русский 🇷🇺",
-    "ZH": "Chinese 🇨🇳", "JA": "Japanese 🇯🇵", "KO": "Korean 🇰🇷", "HI": "Hindi 🇮🇳",
-    "UR": "Urdu 🇵🇰", "TR": "Turkish 🇹🇷", "FA": "Persian 🇮🇷", "ID": "Indonesian 🇮🇩",
-    "MS": "Malay 🇲🇾", "TH": "Thai 🇹🇭", "VI": "Vietnamese 🇻🇳", "NL": "Dutch 🇳🇱",
-    "SV": "Swedish 🇸🇪", "NO": "Norwegian 🇳🇴", "DA": "Danish 🇩🇰", "FI": "Finnish 🇫🇮",
-    "EL": "Greek 🇬🇷", "HE": "Hebrew 🇮🇱", "UK": "Ukrainian 🇺🇦", "PL": "Polish 🇵🇱",
-    "CS": "Czech 🇨🇿", "RO": "Romanian 🇷🇴"
+    "AR": {"name": "Arabic 🇮🇶", "pattern": r'[\u0600-\u06FF]'},
+    "EN": {"name": "English 🇺🇸", "pattern": r'[a-zA-Z]'},
+    "FR": {"name": "Français 🇫🇷", "pattern": r'[a-zA-Zàâçéèêëîïôûùÿñæœ]'},
+    "RU": {"name": "Русский 🇷🇺", "pattern": r'[\u0400-\u04FF]'},
+    "ZH": {"name": "Chinese 🇨🇳", "pattern": r'[\u4e00-\u9fff]'},
+    "JA": {"name": "Japanese 🇯🇵", "pattern": r'[\u3040-\u309f\u30a0-\u30ff]'},
+    "KO": {"name": "Korean 🇰🇷", "pattern": r'[\uac00-\ud7af]'},
+    "HI": {"name": "Hindi 🇮🇳", "pattern": r'[\u0900-\u097F]'},
+    "UR": {"name": "Urdu 🇵🇰", "pattern": r'[\u0600-\u06FF]'},
+    "FA": {"name": "Persian 🇮🇷", "pattern": r'[\u0600-\u06FF]'},
+    "TR": {"name": "Turkish 🇹🇷", "pattern": r'[a-zA-ZçğıöşüÇĞİÖŞÜ]'},
+    "DE": {"name": "Deutsch 🇩🇪", "pattern": r'[a-zA-ZäöüßÄÖÜ]'}
+    # يمكن إضافة باقي اللغات بنفس النمط
 }
 
-# Settings Database
 group_settings = defaultdict(lambda: {
     'link_filter': True, 'spam_filter': True, 
-    'langs': {code: True for code in LANGUAGES}
+    'langs': {code: False for code in LANGUAGES}
 })
 
-# --- Main Panel Builder ---
 def build_main_panel(chat_id):
     s = group_settings[chat_id]
     b = InlineKeyboardBuilder()
@@ -40,15 +43,14 @@ def build_main_panel(chat_id):
     b.row(InlineKeyboardButton(text="🌍 Language Gate", callback_data=f"lang_menu_{chat_id}"))
     return b.as_markup()
 
-# --- Language Panel Builder ---
 def build_lang_panel(chat_id):
     s = group_settings[chat_id]
     b = InlineKeyboardBuilder()
     items = list(LANGUAGES.items())
     for i in range(0, len(items), 2):
         row = []
-        for code, name in items[i:i+2]:
-            text = f"{name} {'✅' if s['langs'][code] else '❌'}"
+        for code, info in items[i:i+2]:
+            text = f"{info['name']} {'✅' if s['langs'][code] else '❌'}"
             row.append(InlineKeyboardButton(text=text, callback_data=f"toggle_lang_{code}_{chat_id}"))
         b.row(*row)
     b.row(InlineKeyboardButton(text="🔙 Back", callback_data=f"main_{chat_id}"))
@@ -57,25 +59,21 @@ def build_lang_panel(chat_id):
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message):
     if message.chat.type in ['group', 'supergroup']:
-        await message.answer("✅ Activated! Control panel has been sent to your private chat.")
+        await message.answer("✅ Activated! Control panel sent to private chat.")
         await bot.send_message(message.from_user.id, "🛠 Bot Control Panel:", reply_markup=build_main_panel(message.chat.id))
     else:
-        await message.answer("👋 Welcome! Please add me to your group, then send /start inside the group.")
+        await message.answer("👋 Welcome! Add me to your group, then send /start inside it.")
 
-# --- Button Logic ---
 @dp.callback_query(F.data.startswith("toggle_"))
 async def handle_toggle(callback: types.CallbackQuery):
     data = callback.data.split("_")
     chat_id = int(data[-1])
     s = group_settings[chat_id]
-    
     if data[1] == "lang":
-        lang_code = data[2]
-        s['langs'][lang_code] = not s['langs'][lang_code]
+        s['langs'][data[2]] = not s['langs'][data[2]]
         await callback.message.edit_reply_markup(reply_markup=build_lang_panel(chat_id))
     else:
-        key = f"{data[1]}_filter"
-        s[key] = not s[key]
+        s[f"{data[1]}_filter"] = not s[f"{data[1]}_filter"]
         await callback.message.edit_reply_markup(reply_markup=build_main_panel(chat_id))
     await callback.answer("Updated!")
 
@@ -89,7 +87,6 @@ async def back_to_main(callback: types.CallbackQuery):
     chat_id = int(callback.data.split("_")[-1])
     await callback.message.edit_text("🛠 Bot Control Panel:", reply_markup=build_main_panel(chat_id))
 
-# --- Filter Logic ---
 @dp.message()
 async def monitor(message: types.Message):
     if message.chat.type == 'private' or not message.text: return
@@ -98,10 +95,13 @@ async def monitor(message: types.Message):
     
     violation = False
     if s['link_filter'] and re.search(r'https?://[^\s]+', message.text): violation = True
-    if s['spam_filter'] and len(message.text) > 200: violation = True 
-
-    if violation:
-        await message.delete()
+    elif s['spam_filter'] and len(message.text) > 200: violation = True
+    else:
+        for code, is_forbidden in s['langs'].items():
+            if is_forbidden and re.search(LANGUAGES[code]['pattern'], message.text):
+                violation = True
+                break
+    if violation: await message.delete()
 
 async def main():
     await dp.start_polling(bot)
