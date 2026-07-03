@@ -2,7 +2,7 @@ import asyncio
 import logging
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardButton, ChatPermissions
+from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 import os
 import re
@@ -13,40 +13,37 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 logging.basicConfig(level=logging.INFO)
 
-# قاموس اللغات المحدث
+# Language Dictionary
 LANGUAGES = {
-    "AR": "العربية 🇮🇶", "EN": "English 🇺🇸", "FR": "Français 🇫🇷", "ES": "Español 🇪🇸",
+    "AR": "Arabic 🇮🇶", "EN": "English 🇺🇸", "FR": "Français 🇫🇷", "ES": "Español 🇪🇸",
     "PT": "Português 🇵🇹", "DE": "Deutsch 🇩🇪", "IT": "Italiano 🇮🇹", "RU": "Русский 🇷🇺",
-    "ZH": "中文 🇨🇳", "JA": "日本語 🇯🇵", "KO": "한국어 🇰🇷", "HI": "हिन्दी 🇮🇳",
-    "UR": "اردو 🇵🇰", "TR": "Türkçe 🇹🇷", "FA": "فارسی 🇮🇷", "ID": "Indonesian 🇮🇩",
-    "MS": "Bahasa Melayu 🇲🇾", "TH": "ไทย 🇹🇭", "VI": "Tiếng Việt 🇻🇳", "NL": "Nederlands 🇳🇱",
-    "SV": "Svenska 🇸🇪", "NO": "Norsk 🇳🇴", "DA": "Dansk 🇩🇰", "FI": "Suomi 🇫🇮",
-    "EL": "Ελληνικά 🇬🇷", "HE": "עברית 🇮🇱", "UK": "Українська 🇺🇦", "PL": "Polski 🇵🇱",
-    "CS": "Čeština 🇨🇿", "RO": "Română 🇷🇴"
+    "ZH": "Chinese 🇨🇳", "JA": "Japanese 🇯🇵", "KO": "Korean 🇰🇷", "HI": "Hindi 🇮🇳",
+    "UR": "Urdu 🇵🇰", "TR": "Turkish 🇹🇷", "FA": "Persian 🇮🇷", "ID": "Indonesian 🇮🇩",
+    "MS": "Malay 🇲🇾", "TH": "Thai 🇹🇭", "VI": "Vietnamese 🇻🇳", "NL": "Dutch 🇳🇱",
+    "SV": "Swedish 🇸🇪", "NO": "Norwegian 🇳🇴", "DA": "Danish 🇩🇰", "FI": "Finnish 🇫🇮",
+    "EL": "Greek 🇬🇷", "HE": "Hebrew 🇮🇱", "UK": "Ukrainian 🇺🇦", "PL": "Polish 🇵🇱",
+    "CS": "Czech 🇨🇿", "RO": "Romanian 🇷🇴"
 }
 
-# قاعدة بيانات الإعدادات
+# Settings Database
 group_settings = defaultdict(lambda: {
-    'link_filter': True, 'spam_filter': True, 'warn_limit': 3, 
-    'action': 'kick', 'langs': {code: True for code in LANGUAGES}
+    'link_filter': True, 'spam_filter': True, 
+    'langs': {code: True for code in LANGUAGES}
 })
-user_warnings = defaultdict(int)
 
-# --- باني القائمة الرئيسية ---
+# --- Main Panel Builder ---
 def build_main_panel(chat_id):
     s = group_settings[chat_id]
     b = InlineKeyboardBuilder()
-    b.row(InlineKeyboardButton(text=f"روابط: {'✅' if s['link_filter'] else '❌'}", callback_data=f"toggle_link_{chat_id}"))
-    b.row(InlineKeyboardButton(text=f"سبام: {'✅' if s['spam_filter'] else '❌'}", callback_data=f"toggle_spam_{chat_id}"))
-    b.row(InlineKeyboardButton(text="🌍 بوابة اللغات", callback_data=f"lang_menu_{chat_id}"))
-    b.row(InlineKeyboardButton(text="⚠️ إعدادات العقوبات", callback_data=f"warn_menu_{chat_id}"))
+    b.row(InlineKeyboardButton(text=f"Links: {'✅' if s['link_filter'] else '❌'}", callback_data=f"toggle_link_{chat_id}"))
+    b.row(InlineKeyboardButton(text=f"Spam: {'✅' if s['spam_filter'] else '❌'}", callback_data=f"toggle_spam_{chat_id}"))
+    b.row(InlineKeyboardButton(text="🌍 Language Gate", callback_data=f"lang_menu_{chat_id}"))
     return b.as_markup()
 
-# --- باني قائمة اللغات (العدد الكبير) ---
+# --- Language Panel Builder ---
 def build_lang_panel(chat_id):
     s = group_settings[chat_id]
     b = InlineKeyboardBuilder()
-    # توزيع الأزرار بشكل عرضي (كل زرين في سطر)
     items = list(LANGUAGES.items())
     for i in range(0, len(items), 2):
         row = []
@@ -54,18 +51,18 @@ def build_lang_panel(chat_id):
             text = f"{name} {'✅' if s['langs'][code] else '❌'}"
             row.append(InlineKeyboardButton(text=text, callback_data=f"toggle_lang_{code}_{chat_id}"))
         b.row(*row)
-    b.row(InlineKeyboardButton(text="🔙 رجوع", callback_data=f"main_{chat_id}"))
+    b.row(InlineKeyboardButton(text="🔙 Back", callback_data=f"main_{chat_id}"))
     return b.as_markup()
 
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message):
     if message.chat.type in ['group', 'supergroup']:
-        await message.answer("✅ تم التفعيل بنجاح! تم إرسال لوحة التحكم إلى الخاص.")
-        await bot.send_message(message.from_user.id, "🛠 لوحة التحكم الخاصة بك:", reply_markup=build_main_panel(message.chat.id))
+        await message.answer("✅ Activated! Control panel has been sent to your private chat.")
+        await bot.send_message(message.from_user.id, "🛠 Bot Control Panel:", reply_markup=build_main_panel(message.chat.id))
     else:
-        await message.answer("👋 أهلاً بك! يرجى إضافتي إلى مجموعتك، ثم أرسل /start داخل المجموعة.")
+        await message.answer("👋 Welcome! Please add me to your group, then send /start inside the group.")
 
-# --- منطق الأزرار ---
+# --- Button Logic ---
 @dp.callback_query(F.data.startswith("toggle_"))
 async def handle_toggle(callback: types.CallbackQuery):
     data = callback.data.split("_")
@@ -80,41 +77,31 @@ async def handle_toggle(callback: types.CallbackQuery):
         key = f"{data[1]}_filter"
         s[key] = not s[key]
         await callback.message.edit_reply_markup(reply_markup=build_main_panel(chat_id))
-    await callback.answer("تم التحديث!")
+    await callback.answer("Updated!")
 
 @dp.callback_query(F.data.startswith("lang_menu_"))
 async def open_lang_menu(callback: types.CallbackQuery):
     chat_id = int(callback.data.split("_")[-1])
-    await callback.message.edit_text("🌍 اختر اللغات الممنوعة:", reply_markup=build_lang_panel(chat_id))
+    await callback.message.edit_text("🌍 Select forbidden languages:", reply_markup=build_lang_panel(chat_id))
 
 @dp.callback_query(F.data.startswith("main_"))
 async def back_to_main(callback: types.CallbackQuery):
     chat_id = int(callback.data.split("_")[-1])
-    await callback.message.edit_text("🛠 لوحة التحكم الخاصة بك:", reply_markup=build_main_panel(chat_id))
+    await callback.message.edit_text("🛠 Bot Control Panel:", reply_markup=build_main_panel(chat_id))
 
-# --- منطق الفلترة ---
+# --- Filter Logic ---
 @dp.message()
 async def monitor(message: types.Message):
     if message.chat.type == 'private' or not message.text: return
     chat_id = message.chat.id
     s = group_settings[chat_id]
-    user_id = message.from_user.id
     
     violation = False
     if s['link_filter'] and re.search(r'https?://[^\s]+', message.text): violation = True
     if s['spam_filter'] and len(message.text) > 200: violation = True 
 
     if violation:
-        user_warnings[user_id] += 1
-        if user_warnings[user_id] >= s['warn_limit']:
-            try:
-                if s['action'] == 'kick': await bot.ban_chat_member(chat_id, user_id)
-                else: await bot.restrict_chat_member(chat_id, user_id, permissions=ChatPermissions(can_send_messages=False))
-                user_warnings[user_id] = 0
-            except: pass
-        else:
-            await message.delete()
-            await message.answer(f"⚠️ تحذير {user_warnings[user_id]}/{s['warn_limit']}")
+        await message.delete()
 
 async def main():
     await dp.start_polling(bot)
