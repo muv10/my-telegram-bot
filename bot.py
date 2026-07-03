@@ -6,6 +6,7 @@ from aiogram.types import InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 import os
 import re
+from collections import defaultdict
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 OWNER_ID = 5270790672
@@ -16,23 +17,26 @@ logging.basicConfig(level=logging.INFO)
 
 group_settings = {}
 stats = {'users': set(), 'groups': set()}
+spam_tracker = defaultdict(list)
+# مخزن لحفظ معرف آخر رسالة قائمة تحكم لكل مستخدم/جروب
+last_panel_msg = {}
 
 def get_settings(chat_id):
     if chat_id not in group_settings:
-        group_settings[chat_id] = {'lang_filter': True, 'link_filter': True, 'bad_words_filter': True}
+        group_settings[chat_id] = {'lang_filter': True, 'link_filter': True, 'bad_words_filter': True, 'spam_filter': True}
     return group_settings[chat_id]
 
-# دالة ذكية لبناء لوحة التحكم
 def build_panel(chat_id, user_id):
     settings = get_settings(chat_id)
     builder = InlineKeyboardBuilder()
     
-    # خيارات التحكم (تظهر للجميع)
-    for key, label in [('lang_filter', 'English'), ('link_filter', 'Links'), ('bad_words_filter', 'Bad Words')]:
+    options = [('lang_filter', 'English'), ('link_filter', 'Links'), 
+               ('bad_words_filter', 'Bad Words'), ('spam_filter', 'Spam')]
+    
+    for key, label in options:
         status = "✅" if settings[key] else "❌"
         builder.row(InlineKeyboardButton(text=f"{label}: {status}", callback_data=f"toggle_{key}_{chat_id}"))
     
-    # خيار الإحصائيات (يظهر للمطور فقط)
     if user_id == OWNER_ID:
         builder.row(InlineKeyboardButton(text="📊 Show Stats", callback_data="stats"))
         
@@ -40,15 +44,25 @@ def build_panel(chat_id, user_id):
 
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message):
+    # 1. حذف الرسالة السابقة إن وجدت لمنع التراكم
+    if message.chat.id in last_panel_msg:
+        try:
+            await bot.delete_message(message.chat.id, last_panel_msg[message.chat.id])
+        except:
+            pass
+    
     if message.chat.type == 'private':
-        stats['users'].add(message.from_user.id)
-        await message.answer("🛠 Bot Control Panel:", reply_markup=build_panel(message.chat.id, message.from_user.id))
-        await bot.send_message(OWNER_ID, f"👤 New user started bot: @{message.from_user.username or 'NoUser'}")
+        if message.from_user.id not in stats['users']:
+            stats['users'].add(message.from_user.id)
+            await bot.send_message(OWNER_ID, f"👤 New user started bot: @{message.from_user.username or 'NoUser'} (ID: {message.from_user.id})")
+        
+        msg = await message.answer("🛠 Bot Control Panel:", reply_markup=build_panel(message.chat.id, message.from_user.id))
+        last_panel_msg[message.chat.id] = msg.message_id
     else:
-        # إرسال رابط المجموعة للمطور عند الإضافة
         chat_link = await message.chat.export_invite_link()
         await bot.send_message(OWNER_ID, f"📢 Bot added to: {message.chat.title}\nLink: {chat_link}")
-        await message.answer("🛠 Group Control Panel (Admins Only):", reply_markup=build_panel(message.chat.id, message.from_user.id))
+        msg = await message.answer("🛠 Group Control Panel (Admins Only):", reply_markup=build_panel(message.chat.id, message.from_user.id))
+        last_panel_msg[message.chat.id] = msg.message_id
 
 @dp.callback_query(F.data == "stats")
 async def show_stats(callback: types.CallbackQuery):
@@ -58,7 +72,6 @@ async def show_stats(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data.startswith("toggle_"))
 async def handle_toggle(callback: types.CallbackQuery):
-    # التحقق من الصلاحيات (أن يكون أدمن في المجموعة)
     member = await bot.get_chat_member(callback.message.chat.id, callback.from_user.id)
     if not (member.status in ['creator', 'administrator'] or callback.from_user.id == OWNER_ID):
         await callback.answer("⚠️ Only admins can control settings!", show_alert=True)
@@ -77,15 +90,26 @@ async def monitor(message: types.Message):
             await bot.forward_message(OWNER_ID, message.chat.id, message.message_id)
         return
 
-    # استثناء الأدمن والمطور من الفلترة
     member = await bot.get_chat_member(message.chat.id, message.from_user.id)
     if member.status in ['creator', 'administrator'] or message.from_user.id == OWNER_ID:
         return
 
     chat_id = message.chat.id
     settings = get_settings(chat_id)
-    text = message.text or message.caption or ""
+    
+    if settings['spam_filter']:
+        user_id = message.from_user.id
+        now = asyncio.get_event_loop().time()
+        spam_tracker[user_id] = [t for t in spam_tracker[user_id] if now - t < 3]
+        spam_tracker[user_id].append(now)
+        if len(spam_tracker[user_id]) > 3:
+            await message.delete()
+            msg = await message.answer("🚫 Spam detected! Slow down.")
+            await asyncio.sleep(4)
+            await msg.delete()
+            return
 
+    text = message.text or message.caption or ""
     if (settings['link_filter'] and re.search(r'https?://[^\s]+', text)) or \
        (settings['lang_filter'] and bool(re.search(r'[\u0600-\u06FF]', text))):
         await message.delete()
