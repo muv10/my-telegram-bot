@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO)
 LANGUAGES = {
     "AR": {"name": "Arabic 🇮🇶", "pattern": r'[\u0600-\u06FF]'},
     "EN": {"name": "English 🇺🇸", "pattern": r'[a-zA-Z]'},
-    "FR": {"name": "Français 🇫🇷", "pattern": r'[a-zA-Zàâçéèêëîïôûùÿñæœ]'},
+    "FR": {"name": "Français 🇫🇷", "pattern": r'[àâçéèêëîïôûùÿñæœ]'},
     "RU": {"name": "Русский 🇷🇺", "pattern": r'[\u0400-\u04FF]'},
     "ZH": {"name": "Chinese 🇨🇳", "pattern": r'[\u4e00-\u9fff]'},
     "JA": {"name": "Japanese 🇯🇵", "pattern": r'[\u3040-\u309f\u30a0-\u30ff]'},
@@ -25,9 +25,8 @@ LANGUAGES = {
     "HI": {"name": "Hindi 🇮🇳", "pattern": r'[\u0900-\u097F]'},
     "UR": {"name": "Urdu 🇵🇰", "pattern": r'[\u0600-\u06FF]'},
     "FA": {"name": "Persian 🇮🇷", "pattern": r'[\u0600-\u06FF]'},
-    "TR": {"name": "Turkish 🇹🇷", "pattern": r'[a-zA-ZçğıöşüÇĞİÖŞÜ]'},
-    "DE": {"name": "Deutsch 🇩🇪", "pattern": r'[a-zA-ZäöüßÄÖÜ]'}
-    # يمكن إضافة باقي اللغات بنفس النمط
+    "TR": {"name": "Turkish 🇹🇷", "pattern": r'[çğıöşüÇĞİÖŞÜ]'},
+    "DE": {"name": "Deutsch 🇩🇪", "pattern": r'[äöüßÄÖÜ]'}
 }
 
 group_settings = defaultdict(lambda: {
@@ -94,13 +93,24 @@ async def monitor(message: types.Message):
     s = group_settings[chat_id]
     
     violation = False
-    if s['link_filter'] and re.search(r'https?://[^\s]+', message.text): violation = True
-    elif s['spam_filter'] and len(message.text) > 200: violation = True
+    if s['link_filter'] and re.search(r'https?://[^\s]+', message.text):
+        violation = True
+    elif s['spam_filter'] and len(message.text) > 200:
+        violation = True
     else:
+        # فحص اللغات الممنوعة فقط
         for code, is_forbidden in s['langs'].items():
-            if is_forbidden and re.search(LANGUAGES[code]['pattern'], message.text):
-                violation = True
-                break
+            if is_forbidden:
+                # التحقق الخاص بالإنجليزية لمنع التداخل
+                if code == "EN":
+                    # إذا كانت الإنجليزية مفعلة، نحذف إذا وُجدت حروف إنجليزية
+                    if re.search(LANGUAGES["EN"]['pattern'], message.text):
+                        violation = True; break
+                else:
+                    # للغات الأخرى، نفحص النمط الخاص بها
+                    if re.search(LANGUAGES[code]['pattern'], message.text):
+                        violation = True; break
+    
     if violation: await message.delete()
 
 async def main():
